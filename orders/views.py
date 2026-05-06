@@ -1,4 +1,4 @@
-﻿from rest_framework import viewsets, status, filters
+from rest_framework import viewsets, status, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
@@ -19,43 +19,73 @@ class OrderViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         from django.utils import timezone
         from datetime import timedelta
-        import threading
+        import pika
+        import json
         import requests
         import os
+        from rest_framework.exceptions import ValidationError
 
-        # Establecer fecha de entrega estimada (3 dÃ­as despuÃ©s)
+        # Validar stock sincrónicamente (P3)
+        catalog_url = os.getenv('CATALOG_SERVICE_URL', 'http://localhost:8002/api/products')
+        items_data = serializer.validated_data.get('items', [])
+        for item in items_data:
+            try:
+                prod_resp = requests.get(f"{catalog_url}/{item['product_id']}/", timeout=5)
+                if prod_resp.status_code == 200:
+                    product = prod_resp.json()
+                    if product.get('stock', 0) < item['quantity']:
+                        raise ValidationError(f"Stock insuficiente para el producto {product.get('name', item['product_id'])}")
+                else:
+                    raise ValidationError(f"No se pudo verificar el producto {item['product_id']}")
+            except requests.exceptions.RequestException:
+                raise ValidationError("Error al comunicar con el servicio de catálogo.")
+
+        # Establecer fecha de entrega estimada
         estimated_delivery = timezone.now() + timedelta(days=3)
         order = serializer.save(estimated_delivery_date=estimated_delivery)
         
         # Registrar historial inicial
         OrderHistory.objects.create(order=order, status=order.status, comment="Pedido creado")
 
-        # Simular evento asincrÃ³nico para descontar inventario
-        def reduce_catalog_stock():
-            catalog_url = os.getenv('CATALOG_SERVICE_URL', 'http://localhost:8002/api/products/bulk_reduce_stock/')
-            items_data = [
-                {"product_id": item.product_id, "quantity": item.quantity}
-                for item in order.items.all()
-            ]
+        # Publicar evento en RabbitMQ
+        def publish_order_created():
             try:
-                requests.post(catalog_url, json={"items": items_data}, timeout=5)
+                connection = pika.BlockingConnection(pika.ConnectionParameters(host=os.getenv('RABBITMQ_HOST', 'localhost')))
+                channel = connection.channel()
+                channel.queue_declare(queue='order_queue', durable=True)
+                
+                message = {
+                    "event": "order_created",
+                    "order_id": order.id,
+                    "items": [{"product_id": i.product_id, "quantity": i.quantity} for i in order.items.all()]
+                }
+                
+                channel.basic_publish(
+                    exchange='',
+                    routing_key='order_queue',
+                    body=json.dumps(message),
+                    properties=pika.BasicProperties(delivery_mode=2) # make message persistent
+                )
+                connection.close()
             except Exception as e:
-                print(f"Error notifying catalog service: {e}")
+                print(f"Error publishing to RabbitMQ: {e}")
 
-        # Ejecutar en segundo plano (simulando asincronÃ­a)
-        thread = threading.Thread(target=reduce_catalog_stock)
-        thread.start()
+        # Ejecutar publicador
+        publish_order_created()
 
     @action(detail=True, methods=['patch'])
     def update_status(self, request, pk=None):
         order = self.get_object()
         new_status = request.data.get('status')
         comment = request.data.get('comment', '')
+        payment_method = request.data.get('payment_method')
 
         if new_status not in dict(Order.STATUS_CHOICES):
             return Response({"error": "Invalid status"}, status=status.HTTP_400_BAD_REQUEST)
 
         order.status = new_status
+        if payment_method:
+            order.payment_method = payment_method
         order.save()
         
         OrderHistory.objects.create(order=order, status=new_status, comment=comment)
@@ -72,4 +102,30 @@ class OrderViewSet(viewsets.ModelViewSet):
         order.save()
         
         OrderHistory.objects.create(order=order, status='CANCELADO', comment="Cancelado por el usuario")
+
+        # Restaurar stock (P1)
+        import pika
+        import json
+        import os
+        try:
+            connection = pika.BlockingConnection(pika.ConnectionParameters(host=os.getenv('RABBITMQ_HOST', 'localhost')))
+            channel = connection.channel()
+            channel.queue_declare(queue='order_queue', durable=True)
+            
+            message = {
+                "event": "order_cancelled",
+                "order_id": order.id,
+                "items": [{"product_id": i.product_id, "quantity": i.quantity} for i in order.items.all()]
+            }
+            
+            channel.basic_publish(
+                exchange='',
+                routing_key='order_queue',
+                body=json.dumps(message),
+                properties=pika.BasicProperties(delivery_mode=2)
+            )
+            connection.close()
+        except Exception as e:
+            print(f"Error publishing cancel event to RabbitMQ: {e}")
+
         return Response(OrderSerializer(order).data)
