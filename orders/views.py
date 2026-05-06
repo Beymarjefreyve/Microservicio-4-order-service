@@ -1,4 +1,4 @@
-from rest_framework import viewsets, status, filters
+﻿from rest_framework import viewsets, status, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
@@ -23,14 +23,14 @@ class OrderViewSet(viewsets.ModelViewSet):
         import requests
         import os
 
-        # Establecer fecha de entrega estimada (3 días después)
+        # Establecer fecha de entrega estimada (3 dÃ­as despuÃ©s)
         estimated_delivery = timezone.now() + timedelta(days=3)
         order = serializer.save(estimated_delivery_date=estimated_delivery)
         
         # Registrar historial inicial
         OrderHistory.objects.create(order=order, status=order.status, comment="Pedido creado")
 
-        # Simular evento asincrónico para descontar inventario
+        # Simular evento asincrÃ³nico para descontar inventario
         def reduce_catalog_stock():
             catalog_url = os.getenv('CATALOG_SERVICE_URL', 'http://localhost:8002/api/products/bulk_reduce_stock/')
             items_data = [
@@ -42,7 +42,7 @@ class OrderViewSet(viewsets.ModelViewSet):
             except Exception as e:
                 print(f"Error notifying catalog service: {e}")
 
-        # Ejecutar en segundo plano (simulando asincronía)
+        # Ejecutar en segundo plano (simulando asincronÃ­a)
         thread = threading.Thread(target=reduce_catalog_stock)
         thread.start()
 
