@@ -51,7 +51,15 @@ class OrderViewSet(viewsets.ModelViewSet):
         # Publicar evento en RabbitMQ
         def publish_order_created():
             try:
-                connection = pika.BlockingConnection(pika.ConnectionParameters(host=os.getenv('RABBITMQ_HOST', 'localhost')))
+                rabbitmq_url = os.getenv('RABBITMQ_URL')
+                rabbitmq_host = os.getenv('RABBITMQ_HOST', 'localhost')
+                
+                if rabbitmq_url:
+                    params = pika.URLParameters(rabbitmq_url)
+                else:
+                    params = pika.ConnectionParameters(host=rabbitmq_host)
+                
+                connection = pika.BlockingConnection(params)
                 channel = connection.channel()
                 channel.queue_declare(queue='order_queue', durable=True)
                 
@@ -109,7 +117,15 @@ class OrderViewSet(viewsets.ModelViewSet):
         import json
         import os
         try:
-            connection = pika.BlockingConnection(pika.ConnectionParameters(host=os.getenv('RABBITMQ_HOST', 'localhost')))
+            rabbitmq_url = os.getenv('RABBITMQ_URL')
+            rabbitmq_host = os.getenv('RABBITMQ_HOST', 'localhost')
+            
+            if rabbitmq_url:
+                params = pika.URLParameters(rabbitmq_url)
+            else:
+                params = pika.ConnectionParameters(host=rabbitmq_host)
+                
+            connection = pika.BlockingConnection(params)
             channel = connection.channel()
             channel.queue_declare(queue='order_queue', durable=True)
             

@@ -1,5 +1,6 @@
-﻿import os
+import os
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -54,10 +55,26 @@ TEMPLATES = [
     },
 ]
 
+DATABASE_URL = os.getenv(
+    'DATABASE_URL',
+    'postgresql://neondb_owner:npg_dSBF8TOJtE3A@ep-crimson-recipe-aqc2bbex-pooler.c-8.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require',
+)
+
+parsed_db_url = urlparse(DATABASE_URL)
+db_query = parse_qs(parsed_db_url.query)
+
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': parsed_db_url.path.lstrip('/'),
+        'USER': parsed_db_url.username,
+        'PASSWORD': parsed_db_url.password,
+        'HOST': parsed_db_url.hostname,
+        'PORT': parsed_db_url.port or 5432,
+        'OPTIONS': {
+            'sslmode': db_query.get('sslmode', ['require'])[0],
+            'channel_binding': db_query.get('channel_binding', ['require'])[0],
+        },
     }
 }
 
