@@ -29,6 +29,7 @@ class OrderItem(models.Model):
     order = models.ForeignKey(Order, related_name='items', on_delete=models.CASCADE)
     product_id = models.IntegerField()
     product_name = models.CharField(max_length=255)
+    product_image = models.URLField(max_length=500, blank=True, null=True)
     quantity = models.PositiveIntegerField()
     price_at_purchase = models.DecimalField(max_digits=10, decimal_places=2)
 

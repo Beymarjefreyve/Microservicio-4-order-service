@@ -26,19 +26,20 @@ class OrderViewSet(viewsets.ModelViewSet):
         from rest_framework.exceptions import ValidationError
 
         # Validar stock sincrónicamente (P3)
-        catalog_url = os.getenv('CATALOG_SERVICE_URL', 'http://localhost:8002/api/products')
+        # Validar stock sincrónicamente con el servicio de inventario
+        inventory_url = os.getenv('INVENTORY_SERVICE_URL', 'http://localhost:8003/api/inventory')
         items_data = serializer.validated_data.get('items', [])
         for item in items_data:
             try:
-                prod_resp = requests.get(f"{catalog_url}/{item['product_id']}/", timeout=5)
-                if prod_resp.status_code == 200:
-                    product = prod_resp.json()
-                    if product.get('stock', 0) < item['quantity']:
-                        raise ValidationError(f"Stock insuficiente para el producto {product.get('name', item['product_id'])}")
+                inv_resp = requests.get(f"{inventory_url}/{item['product_id']}/", timeout=5)
+                if inv_resp.status_code == 200:
+                    inventory_data = inv_resp.json()
+                    if inventory_data.get('quantity', 0) < item['quantity']:
+                        raise ValidationError(f"Stock insuficiente para el producto ID {item['product_id']}")
                 else:
-                    raise ValidationError(f"No se pudo verificar el producto {item['product_id']}")
+                    raise ValidationError(f"No se pudo verificar el stock para el producto {item['product_id']}")
             except requests.exceptions.RequestException:
-                raise ValidationError("Error al comunicar con el servicio de catálogo.")
+                raise ValidationError("Error al comunicar con el servicio de inventario.")
 
         # Establecer fecha de entrega estimada
         estimated_delivery = timezone.now() + timedelta(days=3)
