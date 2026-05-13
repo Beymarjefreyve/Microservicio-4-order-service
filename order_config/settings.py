@@ -1,15 +1,15 @@
-﻿import os
+import os
 from pathlib import Path
 from dotenv import load_dotenv
 
-load_dotenv()
-
+# Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# Carga variables desde .env
+load_dotenv(BASE_DIR / '.env')
+
 SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-order-service-key-change-this')
-
 DEBUG = os.getenv('DEBUG', 'True') == 'True'
-
 ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', '*').split(',')
 
 INSTALLED_APPS = [
@@ -54,6 +54,9 @@ TEMPLATES = [
     },
 ]
 
+WSGI_APPLICATION = 'order_config.wsgi.application'
+
+# Database - Original SQLite
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',

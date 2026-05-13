@@ -25,32 +25,15 @@ class OrderViewSet(viewsets.ModelViewSet):
         import os
         from rest_framework.exceptions import ValidationError
 
-        # Validar stock sincrónicamente (P3)
-        catalog_url = os.getenv('CATALOG_SERVICE_URL', 'http://localhost:8002/api/products')
-        items_data = serializer.validated_data.get('items', [])
-        for item in items_data:
-            try:
-                prod_resp = requests.get(f"{catalog_url}/{item['product_id']}/", timeout=5)
-                if prod_resp.status_code == 200:
-                    product = prod_resp.json()
-                    if product.get('stock', 0) < item['quantity']:
-                        raise ValidationError(f"Stock insuficiente para el producto {product.get('name', item['product_id'])}")
-                else:
-                    raise ValidationError(f"No se pudo verificar el producto {item['product_id']}")
-            except requests.exceptions.RequestException:
-                raise ValidationError("Error al comunicar con el servicio de catálogo.")
-
-        # Establecer fecha de entrega estimada
         estimated_delivery = timezone.now() + timedelta(days=3)
         order = serializer.save(estimated_delivery_date=estimated_delivery)
         
-        # Registrar historial inicial
         OrderHistory.objects.create(order=order, status=order.status, comment="Pedido creado")
 
-        # Publicar evento en RabbitMQ
         def publish_order_created():
             try:
-                connection = pika.BlockingConnection(pika.ConnectionParameters(host=os.getenv('RABBITMQ_HOST', 'localhost')))
+                rabbitmq_host = os.getenv('RABBITMQ_HOST', '127.0.0.1')
+                connection = pika.BlockingConnection(pika.ConnectionParameters(host=rabbitmq_host))
                 channel = connection.channel()
                 channel.queue_declare(queue='order_queue', durable=True)
                 
@@ -64,13 +47,12 @@ class OrderViewSet(viewsets.ModelViewSet):
                     exchange='',
                     routing_key='order_queue',
                     body=json.dumps(message),
-                    properties=pika.BasicProperties(delivery_mode=2) # make message persistent
+                    properties=pika.BasicProperties(delivery_mode=2)
                 )
                 connection.close()
             except Exception as e:
                 print(f"Error publishing to RabbitMQ: {e}")
 
-        # Ejecutar publicador
         publish_order_created()
 
     @action(detail=True, methods=['patch'])
@@ -96,36 +78,23 @@ class OrderViewSet(viewsets.ModelViewSet):
         order = self.get_object()
         
         if order.status in ['ENVIADO', 'ENTREGADO', 'CANCELADO']:
-            return Response({"error": f"Cannot cancel order in status {order.status}"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": f"No se puede cancelar en estado {order.status}"}, status=status.HTTP_400_BAD_REQUEST)
 
         order.status = 'CANCELADO'
         order.save()
         
         OrderHistory.objects.create(order=order, status='CANCELADO', comment="Cancelado por el usuario")
 
-        # Restaurar stock (P1)
-        import pika
-        import json
+        # Restaurar stock vía Catalog Service para consistencia total
         import os
-        try:
-            connection = pika.BlockingConnection(pika.ConnectionParameters(host=os.getenv('RABBITMQ_HOST', 'localhost')))
-            channel = connection.channel()
-            channel.queue_declare(queue='order_queue', durable=True)
-            
-            message = {
-                "event": "order_cancelled",
-                "order_id": order.id,
-                "items": [{"product_id": i.product_id, "quantity": i.quantity} for i in order.items.all()]
-            }
-            
-            channel.basic_publish(
-                exchange='',
-                routing_key='order_queue',
-                body=json.dumps(message),
-                properties=pika.BasicProperties(delivery_mode=2)
-            )
-            connection.close()
-        except Exception as e:
-            print(f"Error publishing cancel event to RabbitMQ: {e}")
+        import requests
+        catalog_url = os.getenv('CATALOG_SERVICE_URL', 'http://127.0.0.1:8002/api/products')
+        restore_items = [{"product_id": i.product_id, "quantity": i.quantity} for i in order.items.all()]
+        
+        if restore_items:
+            try:
+                requests.post(f"{catalog_url}/bulk_restore_stock/", json={"items": restore_items}, timeout=10)
+            except Exception as e:
+                print(f"Error restoring stock via catalog: {e}")
 
         return Response(OrderSerializer(order).data)
