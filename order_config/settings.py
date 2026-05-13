@@ -55,11 +55,8 @@ TEMPLATES = [
     },
 ]
 
-<<<<<<< HEAD
 WSGI_APPLICATION = 'order_config.wsgi.application'
 
-# Database - Original SQLite
-=======
 DATABASE_URL = os.getenv(
     'DATABASE_URL',
     'postgresql://neondb_owner:npg_dSBF8TOJtE3A@ep-crimson-recipe-aqc2bbex-pooler.c-8.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require',
@@ -67,8 +64,6 @@ DATABASE_URL = os.getenv(
 
 parsed_db_url = urlparse(DATABASE_URL)
 db_query = parse_qs(parsed_db_url.query)
-
->>>>>>> ac52d38f89864e13ab2bf045bafbc791900f4f21
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
