@@ -2,6 +2,7 @@ from rest_framework import viewsets, status, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
+from django.db.models import Sum
 from .models import Order, OrderItem, OrderHistory
 from .serializers import OrderSerializer, OrderItemSerializer
 
@@ -98,3 +99,38 @@ class OrderViewSet(viewsets.ModelViewSet):
                 print(f"Error restoring stock via catalog: {e}")
 
         return Response(OrderSerializer(order).data)
+
+    @action(detail=False, methods=['get'])
+    def seller_stats(self, request):
+        """
+        Devuelve estadísticas de ventas de un vendedor.
+        Recibe los product_ids del vendedor desde el catálogo.
+        GET /api/orders/seller_stats/?product_ids=1,2,3
+        """
+        product_ids_param = request.query_params.get('product_ids', '')
+        if not product_ids_param:
+            return Response({'total_sales': 0, 'total_orders': 0})
+
+        try:
+            product_ids = [int(pid) for pid in product_ids_param.split(',') if pid.strip()]
+        except ValueError:
+            return Response({'error': 'product_ids inválidos'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Contar órdenes PAGADAS que contienen al menos uno de esos productos
+        paid_orders = Order.objects.filter(
+            status='PAGADO',
+            items__product_id__in=product_ids
+        ).distinct()
+
+        total_orders = paid_orders.count()
+
+        # Sumar unidades vendidas de esos productos
+        total_units = OrderItem.objects.filter(
+            order__status='PAGADO',
+            product_id__in=product_ids
+        ).aggregate(total=Sum('quantity'))['total'] or 0
+
+        return Response({
+            'total_orders': total_orders,
+            'total_units_sold': total_units,
+        })
