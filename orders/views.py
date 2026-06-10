@@ -34,8 +34,13 @@ class OrderViewSet(viewsets.ModelViewSet):
 
         def publish_order_created():
             try:
+                rabbitmq_url = os.getenv('RABBITMQ_URL')
                 rabbitmq_host = os.getenv('RABBITMQ_HOST', '127.0.0.1')
-                connection = pika.BlockingConnection(pika.ConnectionParameters(host=rabbitmq_host))
+                if rabbitmq_url:
+                    params = pika.URLParameters(rabbitmq_url)
+                else:
+                    params = pika.ConnectionParameters(host=rabbitmq_host)
+                connection = pika.BlockingConnection(params)
                 channel = connection.channel()
                 channel.queue_declare(queue='order_queue', durable=True)
                 
