@@ -44,3 +44,24 @@ class OrderHistory(models.Model):
 
     class Meta:
         verbose_name_plural = "Order histories"
+
+class Incident(models.Model):
+    STATUS_CHOICES = [
+        ('ABIERTA', 'Abierta'),
+        ('REVISION', 'En revisión'),
+        ('RESUELTA', 'Resuelta'),
+    ]
+
+    order_id = models.IntegerField()
+    user_id = models.IntegerField()
+    user_name = models.CharField(max_length=255, blank=True, default='')
+    title = models.CharField(max_length=255)
+    description = models.TextField()
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='ABIERTA')
+    comment = models.TextField(blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Incident {self.id} - Order {self.order_id} - {self.status}"
+

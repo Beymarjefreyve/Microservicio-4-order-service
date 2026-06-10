@@ -3,8 +3,9 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db.models import Sum
-from .models import Order, OrderItem, OrderHistory
-from .serializers import OrderSerializer, OrderItemSerializer
+from .models import Order, OrderItem, OrderHistory, Incident
+from .serializers import OrderSerializer, OrderItemSerializer, IncidentSerializer
+
 
 class OrderViewSet(viewsets.ModelViewSet):
     queryset = Order.objects.all()
@@ -116,9 +117,9 @@ class OrderViewSet(viewsets.ModelViewSet):
         except ValueError:
             return Response({'error': 'product_ids inválidos'}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Contar órdenes PAGADAS que contienen al menos uno de esos productos
+        # Contar órdenes activas (no canceladas) que contienen al menos uno de esos productos
         paid_orders = Order.objects.filter(
-            status='PAGADO',
+            status__in=['PAGADO', 'PENDIENTE', 'PROCESANDO', 'ENVIADO', 'ENTREGADO'],
             items__product_id__in=product_ids
         ).distinct()
 
@@ -126,7 +127,7 @@ class OrderViewSet(viewsets.ModelViewSet):
 
         # Sumar unidades vendidas de esos productos
         total_units = OrderItem.objects.filter(
-            order__status='PAGADO',
+            order__status__in=['PAGADO', 'PENDIENTE', 'PROCESANDO', 'ENVIADO', 'ENTREGADO'],
             product_id__in=product_ids
         ).aggregate(total=Sum('quantity'))['total'] or 0
 
@@ -134,3 +135,11 @@ class OrderViewSet(viewsets.ModelViewSet):
             'total_orders': total_orders,
             'total_units_sold': total_units,
         })
+
+class IncidentViewSet(viewsets.ModelViewSet):
+    queryset = Incident.objects.all()
+    serializer_class = IncidentSerializer
+    filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
+    filterset_fields = ['order_id', 'user_id', 'status']
+    ordering_fields = ['created_at']
+

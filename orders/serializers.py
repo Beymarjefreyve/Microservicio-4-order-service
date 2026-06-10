@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Order, OrderItem, OrderHistory
+from .models import Order, OrderItem, OrderHistory, Incident
 
 class OrderItemSerializer(serializers.ModelSerializer):
     class Meta:
@@ -25,3 +25,9 @@ class OrderSerializer(serializers.ModelSerializer):
         for item_data in items_data:
             OrderItem.objects.create(order=order, **item_data)
         return order
+
+class IncidentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Incident
+        fields = '__all__'
+
